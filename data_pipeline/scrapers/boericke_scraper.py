@@ -174,19 +174,36 @@ class BoerickeScraper(BaseScraper):
         return raw
 
     def _extract_title(self, lines: list[str]) -> tuple[str, str]:
-        """Extract remedy name and common name from page lines."""
+        """Extract remedy name and common name from page lines.
+
+        The remedy name appears as an ALL-CAPS line after the header block.
+        On homeoint.org pages, the name can be 30+ lines in due to empty
+        lines and non-breaking spaces between the header and the title.
+        """
         name = ""
         common_name = ""
-        for line in lines[:20]:
+        # Header noise keywords to skip
+        SKIP_UPPER = {"BOERICKE", "MATERIA", "MEDICA", "HOM"}
+        for line in lines[:60]:
             clean = line.strip()
-            if not clean or "BOERICKE" in clean.upper() or "MÉDI-T" in clean.upper():
+            if not clean:
                 continue
-            if "HOMŒOPATHIC" in clean.upper() or "MATERIA MEDICA" in clean.upper():
+            upper = clean.upper()
+            # Skip header lines (HOMŒOPATHIC MATERIA MEDICA, by William BOERICKE, Presented by Médi-T)
+            if any(kw in upper for kw in ("BOERICKE", "MATERIA MEDICA", "MEDI-T", "MÉDI-T", "HOMOE", "HOMŒ")):
                 continue
-            if clean.isupper() and len(clean) > 3:
+            # Skip nav links / short words (Home, [A], etc.)
+            if len(clean) <= 3:
+                continue
+            # ALL-CAPS line that doesn't contain header noise → remedy name
+            if clean.isupper() and not any(kw in upper for kw in SKIP_UPPER):
                 name = clean
                 continue
-            if name and not common_name and clean and not clean.startswith("("):
+            # First non-uppercase line after name → common name
+            if name and not common_name and not clean.startswith("("):
+                # Stop if we've hit section content (sentence-like text)
+                if ".--" in clean or len(clean) > 80:
+                    break
                 common_name = clean
                 break
         return name, common_name

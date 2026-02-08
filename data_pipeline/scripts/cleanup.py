@@ -135,19 +135,114 @@ def rebuild_relationships(driver, name_map: dict[str, str], dry_run: bool = Fals
 
     for abbrev, name in name_map.items():
         lookup[name.lower()] = abbrev
-        # First word (e.g., "belladonna" for "Belladonna")
+        # First word
         first = name.split()[0].lower()
         if first and len(first) > 2:
             lookup.setdefault(first, abbrev)
+        # All words individually (for multi-word names)
+        for word in name.split():
+            w = word.lower().strip()
+            if w and len(w) > 3:
+                lookup.setdefault(w, abbrev)
 
-    # Add known abbreviations from relationship extractor
+    # Add known abbreviations from relationship extractor (both directions)
     extractor = RelationshipExtractor()
     for abbr, full in extractor.KNOWN_ABBREVIATIONS.items():
-        target = full.lower()
-        if target in lookup:
-            lookup[abbr.lower()] = lookup[target]
-        elif abbr.lower().replace(" ", "-") in lookup:
-            lookup[abbr.lower()] = lookup[abbr.lower().replace(" ", "-")]
+        full_lower = full.lower()
+        abbr_lower = abbr.lower()
+        # If we know the full name maps to an abbrev in our DB
+        if full_lower in lookup:
+            lookup[abbr_lower] = lookup[full_lower]
+        else:
+            # Try first-word match
+            first = full_lower.split()[0]
+            if first in lookup:
+                lookup[abbr_lower] = lookup[first]
+                lookup[full_lower] = lookup[first]
+
+    # Add common abbreviation patterns (Boericke uses many abbreviations)
+    _EXTRA_ABBREVS = {
+        "nux vom": "nux-v", "nux vomica": "nux-v",
+        "ant cr": "ant-c", "ant crud": "ant-c", "antimonium crudum": "ant-c",
+        "ant tart": "ant-t", "antimonium tart": "ant-t",
+        "arg nit": "arg-n", "argentum nit": "arg-n",
+        "ars alb": "ars", "arsenicum": "ars", "arsen": "ars",
+        "calc carb": "calc", "calcarea": "calc",
+        "carb veg": "carb-v", "carbo veg": "carb-v",
+        "china": "chin", "cinchona": "chin",
+        "ferr met": "ferr", "ferrum": "ferr", "ferr phos": "ferr-p",
+        "hepar": "hep", "hepar sulph": "hep",
+        "kali carb": "kali-c", "kali bich": "kali-bi", "kali bichrom": "kali-bi",
+        "kali mur": "kali-m", "kali phos": "kali-p", "kali sulph": "kali-s",
+        "kali iod": "kali-i", "kali brom": "kali-br", "kali nit": "kali-n",
+        "mag carb": "mag-c", "mag mur": "mag-m", "mag phos": "mag-p",
+        "merc sol": "merc", "merc cor": "merc-c", "merc iod": "merc-i-r",
+        "mercurius": "merc", "mercury": "merc",
+        "nat mur": "nat-m", "natr mur": "nat-m", "natrum mur": "nat-m",
+        "nat carb": "nat-c", "nat phos": "nat-p", "nat sulph": "nat-s",
+        "natr carb": "nat-c", "natr phos": "nat-p", "natr sulph": "nat-s",
+        "nit acid": "nit-ac", "nitric acid": "nit-ac", "nit ac": "nit-ac",
+        "phos acid": "ph-ac", "phosphoric acid": "ph-ac", "phos ac": "ph-ac",
+        "plumb": "plb", "plumbum": "plb", "plumb met": "plb", "plumb iod": "plb",
+        "rhus tox": "rhus-t", "rhus": "rhus-t",
+        "sep": "sep", "sepia": "sep",
+        "silica": "sil", "silicea": "sil",
+        "sulphur": "sulph", "sulfur": "sulph",
+        "veratrum": "verat", "verat alb": "verat",
+        "zinc met": "zinc", "zincum": "zinc",
+        "fluor ac": "fl-ac", "fluoric acid": "fl-ac",
+        "mur ac": "mur-ac", "muriatic acid": "mur-ac",
+        "ox ac": "ox-ac", "oxalic acid": "ox-ac",
+        "pic ac": "pic-ac", "picric acid": "pic-ac",
+        "sal ac": "sal-ac", "salicylic acid": "sal-ac",
+        "sul ac": "sul-ac", "sulphuric acid": "sul-ac",
+        "acet ac": "acet-ac", "acetic acid": "acet-ac",
+        "benz ac": "benz-ac", "benzoic acid": "benz-ac",
+        "carb ac": "carb-ac", "carbolic acid": "carb-ac",
+        "chr ac": "chr-ac", "chromic acid": "chr-ac",
+        "lact ac": "lac-ac", "lactic acid": "lac-ac",
+        "bar carb": "bar-c", "baryta carb": "bar-c", "baryta": "bar-c",
+        "bar mur": "bar-m", "baryta mur": "bar-m",
+        "am carb": "am-c", "ammon carb": "am-c",
+        "am mur": "am-m", "ammon mur": "am-m",
+        "aur met": "aur", "aurum": "aur",
+        "bov": "bov", "bovista": "bov",
+        "cann sat": "cann-s", "cannabis sat": "cann-s",
+        "cann ind": "cann-i", "cannabis ind": "cann-i",
+        "caps": "caps", "capsicum": "caps",
+        "cina": "cina",
+        "coloc": "coloc", "colocynth": "coloc",
+        "droser": "dros", "drosera": "dros",
+        "graph": "graph", "graphites": "graph",
+        "guajacum": "guaj", "guaiac": "guaj",
+        "ipec": "ip", "ipecac": "ip", "ipecacuanha": "ip",
+        "kreosot": "kreos", "kreosotum": "kreos",
+        "pulsat": "puls", "pulsatilla": "puls",
+        "staphys": "staph", "staphysagria": "staph",
+        "coff tosta": "coff", "coffea": "coff",
+        "crot": "crot-h", "crotalus": "crot-h", "crot hor": "crot-h",
+        "laches": "lach", "lachesis": "lach",
+        "lycop": "lyc", "lycopodium": "lyc",
+        "con": "con-m", "conium": "con-m",
+        "opium": "op",
+        "bell": "bell", "belladonna": "bell",
+        "bryon": "bry", "bryonia": "bry",
+        "camph": "camph", "camphora": "camph",
+        "chamom": "cham", "chamomilla": "cham",
+        "digit": "dig", "digitalis": "dig",
+        "gels": "gels", "gelsemium": "gels",
+        "hyosc": "hyos", "hyoscyamus": "hyos",
+        "ign": "ign", "ignatia": "ign",
+        "staph": "staph", "staphisagria": "staph",
+        "stram": "stram", "stramonium": "stram",
+        "thuja": "thuj",
+        "gossyp": "goss", "gossypium": "goss",
+        "pilocarp": "jab", "jaborandi": "jab",
+        "tussil": "tus-p", "tussilago": "tus-p",
+    }
+    for name_variant, target_abbrev in _EXTRA_ABBREVS.items():
+        if target_abbrev in lookup:
+            lookup.setdefault(name_variant.lower(), target_abbrev)
 
     print(f"  Name lookup: {len(lookup)} entries")
 

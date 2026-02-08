@@ -230,10 +230,16 @@ class Neo4jLoader:
         return result.single()["cnt"]
 
     def _load_indicates(self, session: Session, edges: list) -> int:
+        """Load INDICATES edges as (Rubric)-[:INDICATES]->(Remedy).
+
+        Note: In the mapper, source_id = remedy_abbrev, target_id = rubric_id.
+        We swap them here because the graph convention (matching the ranker
+        query and Kent's Repertory) is  Rubric → Remedy.
+        """
         params = [
             {
-                "source_id": e.source_id,
-                "target_id": e.target_id,
+                "remedy_abbrev": e.source_id,
+                "rubric_id": e.target_id,
                 "grade": e.properties.get("grade", 2),
                 "source": e.properties.get("source", "boericke"),
             }
@@ -242,9 +248,9 @@ class Neo4jLoader:
         result = session.run(
             """
             UNWIND $batch AS e
-            MATCH (rem:Remedy {abbrev: e.source_id})
-            MATCH (rub:Rubric {id: e.target_id})
-            MERGE (rem)-[ind:INDICATES]->(rub)
+            MATCH (rub:Rubric {id: e.rubric_id})
+            MATCH (rem:Remedy {abbrev: e.remedy_abbrev})
+            MERGE (rub)-[ind:INDICATES]->(rem)
             SET ind.grade  = e.grade,
                 ind.source = e.source
             RETURN count(*) AS cnt
